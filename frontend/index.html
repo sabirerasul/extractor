@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+
+</head>
+
+<body>
+  <div id="app">
+    <div class="container">
+      <header class="header">
+        <h1>✨ PDF Document Analyzer</h1>
+        <p>Upload your PDF documents for intelligent analysis and secure redaction processing</p>
+      </header>
+
+      <div class="upload-section">
+        <div class="upload-area" id="uploadArea">
+          <div class="upload-content">
+            <div class="upload-icon">🚀</div>
+            <h3>Drop Your PDF Here</h3>
+            <p>Drag & drop your document or click to select from your device</p>
+            <input type="file" id="fileInput" accept=".pdf" />
+          </div>
+        </div>
+
+        <div class="file-info" id="fileInfo" style="display: none;">
+          <div class="selected-file">
+            <span class="file-icon">📋</span>
+            <div class="file-details">
+              <div class="file-name" id="fileName"></div>
+              <div class="file-size" id="fileSize"></div>
+            </div>
+            <button class="remove-file" id="removeFile">✕</button>
+          </div>
+        </div>
+
+        <button class="analyze-btn" id="analyzeBtn" disabled>
+          <span class="btn-text">🔍 Analyze Document</span>
+          <span class="btn-loader" style="display: none;">
+            <div class="spinner"></div>
+            Processing Magic...
+          </span>
+        </button>
+      </div>
+
+      <div class="results-section" id="resultsSection" style="display: none;">
+        <div class="analysis-result">
+          <h3>🎯 Analysis Complete</h3>
+          <div class="result-badge" id="resultBadge">
+            <span id="analysisResult"></span>
+          </div>
+        </div>
+
+        <div class="pdf-viewer" id="pdfViewer" style="display: none;">
+          <h3>📖 Processed Document</h3>
+          <div class="pdf-controls">
+            <button id="prevPage">← Previous</button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button id="nextPage">Next →</button>
+            <div class="zoom-controls">
+              <button id="zoomOut">-</button>
+              <span id="zoomLevel">100%</span>
+              <button id="zoomIn">+</button>
+            </div>
+          </div>
+          <div class="pdf-container">
+            <canvas id="pdfCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="error-message" id="errorMessage" style="display: none;">
+        <div class="error-content">
+          <span class="error-icon">🚨</span>
+          <div>
+            <h4>Oops! Something went wrong</h4>
+            <p id="errorText"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <h3>Processing your document...</h3>
+      <p>Please wait while we analyze your PDF</p>
+    </div>
+  </div>
+
+  <script>
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+
+
+    class PDFAnalyzer {
+      constructor() {
+        this.selectedFile = null;
+        this.pdfDoc = null;
+        this.currentPage = 1;
+        this.scale = 1.0;
+        this.canvas = null;
+        this.ctx = null;
+
+        this.initializeElements();
+        this.bindEvents();
+      }
+
+      initializeElements() {
+        this.elements = {
+          uploadArea: document.getElementById("uploadArea"),
+          fileInput: document.getElementById("fileInput"),
+          fileInfo: document.getElementById("fileInfo"),
+          fileName: document.getElementById("fileName"),
+          fileSize: document.getElementById("fileSize"),
+          removeFile: document.getElementById("removeFile"),
+          analyzeBtn: document.getElementById("analyzeBtn"),
+          btnText: document.querySelector(".btn-text"),
+          btnLoader: document.querySelector(".btn-loader"),
+          resultsSection: document.getElementById("resultsSection"),
+          analysisResult: document.getElementById("analysisResult"),
+          resultBadge: document.getElementById("resultBadge"),
+          pdfViewer: document.getElementById("pdfViewer"),
+          pdfCanvas: document.getElementById("pdfCanvas"),
+          prevPage: document.getElementById("prevPage"),
+          nextPage: document.getElementById("nextPage"),
+          pageInfo: document.getElementById("pageInfo"),
+          zoomOut: document.getElementById("zoomOut"),
+          zoomIn: document.getElementById("zoomIn"),
+          zoomLevel: document.getElementById("zoomLevel"),
+          errorMessage: document.getElementById("errorMessage"),
+          errorText: document.getElementById("errorText"),
+          loadingOverlay: document.getElementById("loadingOverlay"),
+        };
+
+        this.canvas = this.elements.pdfCanvas;
+        this.ctx = this.canvas.getContext("2d");
+      }
+
+      bindEvents() {
+        // File upload events
+        this.elements.uploadArea.addEventListener("click", () => {
+          if (!this.selectedFile) {
+            this.elements.fileInput.click();
+          }
+        });
+
+        this.elements.fileInput.addEventListener("change", (e) => {
+          this.handleFileSelect(e.target.files[0]);
+        });
+
+        // Drag and drop
+        this.elements.uploadArea.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          this.elements.uploadArea.classList.add("dragover");
+        });
+
+        this.elements.uploadArea.addEventListener("dragleave", () => {
+          this.elements.uploadArea.classList.remove("dragover");
+        });
+
+        this.elements.uploadArea.addEventListener("drop", (e) => {
+          e.preventDefault();
+          this.elements.uploadArea.classList.remove("dragover");
+          const file = e.dataTransfer.files[0];
+          if (file && file.type === "application/pdf") {
+            this.handleFileSelect(file);
+          }
+        });
+
+        // Remove file
+        this.elements.removeFile.addEventListener("click", () => {
+          this.clearFile();
+        });
+
+        // Analyze button
+        this.elements.analyzeBtn.addEventListener("click", () => {
+          this.analyzeDocument();
+        });
+
+        // PDF viewer controls
+        this.elements.prevPage.addEventListener("click", () => {
+          if (this.currentPage > 1) {
+            this.currentPage--;
+            this.renderPage();
+          }
+        });
+
+        this.elements.nextPage.addEventListener("click", () => {
+          if (this.pdfDoc && this.currentPage < this.pdfDoc.numPages) {
+            this.currentPage++;
+            this.renderPage();
+          }
+        });
+
+        this.elements.zoomIn.addEventListener("click", () => {
+          this.scale = Math.min(this.scale + 0.2, 3.0);
+          this.renderPage();
+          this.updateZoomLevel();
+        });
+
+        this.elements.zoomOut.addEventListener("click", () => {
+          this.scale = Math.max(this.scale - 0.2, 0.4);
+          this.renderPage();
+          this.updateZoomLevel();
+        });
+      }
+
+      handleFileSelect(file) {
+        if (!file) return;
+        if (file.type !== "application/pdf") {
+          this.showError("Please select a PDF file.");
+          return;
+        }
+        if (file.size > 50 * 1024 * 1024) {
+          this.showError("File size must be less than 50MB.");
+          return;
+        }
+        this.selectedFile = file;
+        this.showFileInfo(file);
+        this.hideError();
+        this.hideResults();
+      }
+
+      showFileInfo(file) {
+        this.elements.fileName.textContent = file.name;
+        this.elements.fileSize.textContent = this.formatFileSize(file.size);
+        this.elements.fileInfo.style.display = "block";
+        this.elements.uploadArea.style.display = "none";
+        this.elements.analyzeBtn.disabled = false;
+      }
+
+      clearFile() {
+        this.selectedFile = null;
+        this.elements.fileInput.value = "";
+        this.elements.fileInfo.style.display = "none";
+        this.elements.uploadArea.style.display = "block";
+        this.elements.analyzeBtn.disabled = true;
+        this.hideResults();
+        this.hideError();
+      }
+
+      formatFileSize(bytes) {
+        if (bytes === 0) return "0 Bytes";
+        const k = 1024;
+        const sizes = ["Bytes", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      }
+
+      async analyzeDocument() {
+        if (!this.selectedFile) return;
+
+        this.setLoading(true);
+        this.showLoadingOverlay();
+        this.hideError();
+        this.hideResults();
+
+        try {
+          const formData = new FormData();
+          formData.append("file", this.selectedFile);
+
+          const response = await fetch("http://localhost:8000/analyze", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+          const data = await response.json();
+          this.displayResults(data);
+        } catch (error) {
+          console.error("Error analyzing document:", error);
+          this.showError(`Failed: ${error.message}`);
+        } finally {
+          this.setLoading(false);
+          this.hideLoadingOverlay();
+        }
+      }
+
+      async displayResults(data) {
+        this.elements.analysisResult.textContent = data.analysis;
+        this.updateResultBadge(data.analysis);
+        this.elements.resultsSection.style.display = "block";
+
+        if (data.redacted_pdf_b64 && data.redacted_pdf_b64.trim() !== "") {
+          await this.loadPdfFromBase64(data.redacted_pdf_b64);
+          this.elements.pdfViewer.style.display = "block";
+        } else {
+          this.elements.pdfViewer.style.display = "none";
+        }
+      }
+
+      updateResultBadge(analysis) {
+        this.elements.resultBadge.className = "result-badge";
+        switch (analysis.toLowerCase()) {
+          case "needs-review":
+            this.elements.resultBadge.classList.add("needs-review");
+            break;
+          case "approved":
+            this.elements.resultBadge.classList.add("approved");
+            break;
+          case "rejected":
+            this.elements.resultBadge.classList.add("rejected");
+            break;
+          default:
+            this.elements.resultBadge.classList.add("needs-review");
+        }
+      }
+
+      async loadPdfFromBase64(base64Data) {
+        try {
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          this.pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+          this.currentPage = 1;
+          this.scale = 1.0;
+          this.updateZoomLevel();
+          this.updatePageControls();
+          await this.renderPage();
+        } catch (error) {
+          console.error("Error loading PDF:", error);
+          this.showError("Failed to load PDF.");
+        }
+      }
+
+      async renderPage() {
+        if (!this.pdfDoc) return;
+        try {
+          const page = await this.pdfDoc.getPage(this.currentPage);
+          const viewport = page.getViewport({ scale: this.scale });
+          this.canvas.height = viewport.height;
+          this.canvas.width = viewport.width;
+          await page.render({ canvasContext: this.ctx, viewport }).promise;
+          this.updatePageInfo();
+        } catch (error) {
+          console.error("Error rendering page:", error);
+          this.showError("Failed to render page.");
+        }
+      }
+
+      updatePageControls() {
+        if (!this.pdfDoc) return;
+        this.elements.prevPage.disabled = this.currentPage <= 1;
+        this.elements.nextPage.disabled = this.currentPage >= this.pdfDoc.numPages;
+      }
+
+      updatePageInfo() {
+        if (this.pdfDoc) {
+          this.elements.pageInfo.textContent = `Page ${this.currentPage} of ${this.pdfDoc.numPages}`;
+          this.updatePageControls();
+        }
+      }
+
+      updateZoomLevel() {
+        this.elements.zoomLevel.textContent = `${Math.round(this.scale * 100)}%`;
+      }
+
+      setLoading(loading) {
+        this.elements.analyzeBtn.disabled = loading;
+        this.elements.btnText.style.display = loading ? "none" : "inline";
+        this.elements.btnLoader.style.display = loading ? "inline-flex" : "none";
+      }
+
+      showError(message) {
+        this.elements.errorText.textContent = message;
+        this.elements.errorMessage.style.display = "block";
+      }
+      hideError() {
+        this.elements.errorMessage.style.display = "none";
+      }
+      hideResults() {
+        this.elements.resultsSection.style.display = "none";
+      }
+      showLoadingOverlay() {
+        this.elements.loadingOverlay.style.display = "flex";
+      }
+      hideLoadingOverlay() {
+        this.elements.loadingOverlay.style.display = "none";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      new PDFAnalyzer();
+    });
+
+  </script>
+</body>
+
+</html>

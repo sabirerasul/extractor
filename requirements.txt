@@ -1,0 +1,26 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+python-multipart==0.0.9
+
+# PDF and OCR
+pymupdf==1.26.4
+pdfplumber==0.11.4
+camelot-py==0.11.0
+tabula-py==2.9.3
+ocrmypdf==16.6.1
+
+# Image and utils
+Pillow==10.4.0
+opencv-python==4.10.0.84
+numpy==1.26.4
+rapidfuzz==3.9.4
+
+# PII
+spacy==3.7.5
+presidio-analyzer==2.2.357
+presidio-anonymizer==2.2.357
+
+# Others
+requests==2.32.3
+openai>=0.32.0
