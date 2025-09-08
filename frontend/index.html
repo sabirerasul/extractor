@@ -296,7 +296,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
         this.elements.resultsSection.style.display = "block";
 
         if (data.redacted_pdf_b64 && data.redacted_pdf_b64.trim() !== "") {
-          await this.loadPdfFromBase64(data.redacted_pdf_b64);
+          if (data.redacted_pdf_b64.startsWith('http')) {
+            await this.loadPdfFromUrl(data.redacted_pdf_b64);
+          } else {
+            await this.loadPdfFromBase64(data.redacted_pdf_b64);
+          }
           this.elements.pdfViewer.style.display = "block";
         } else {
           this.elements.pdfViewer.style.display = "none";
@@ -328,6 +332,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
             bytes[i] = binaryString.charCodeAt(i);
           }
           this.pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+          this.currentPage = 1;
+          this.scale = 1.0;
+          this.updateZoomLevel();
+          this.updatePageControls();
+          await this.renderPage();
+        } catch (error) {
+          console.error("Error loading PDF:", error);
+          this.showError("Failed to load PDF.");
+        }
+      }
+
+      async loadPdfFromUrl(url) {
+        try {
+          this.pdfDoc = await pdfjsLib.getDocument(url).promise;
           this.currentPage = 1;
           this.scale = 1.0;
           this.updateZoomLevel();

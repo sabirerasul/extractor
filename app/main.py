@@ -1,4 +1,5 @@
 import os, io, tempfile, base64, json, uuid
+import boto3
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from app.models import AnalyzeResponse, Fields, Series, Verifications, ProofSnip, ValueWithMeta
