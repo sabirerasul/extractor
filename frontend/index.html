@@ -273,7 +273,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
           const formData = new FormData();
           formData.append("file", this.selectedFile);
 
-          const response = await fetch("http://localhost:8000/analyze", {
+          const response = await fetch("analyze", {
             method: "POST",
             body: formData,
           });
