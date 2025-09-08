@@ -19,7 +19,24 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+
+if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, S3_BUCKET_NAME]):
+    raise ValueError("AWS S3 environment variables not set. Please check your .env file.")
+
+
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
+
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.80"))
+
 
 api = FastAPI(title="1035 In-Force Extractor API")
 
@@ -108,6 +125,10 @@ async def analyze(file: UploadFile = File(...)):
             b64_img = crop_to_b64(prepped, s["page"], rect)
             proof_snips.append(ProofSnip(label=s["label"], page=s["page"], image_b64=b64_img))
 
+        s3_url = upload_file_to_s3(content, filename, current_user.id)
+        if not s3_url:
+            raise HTTPException(status_code=500, detail="Failed to upload file to S3")
+
         resp = AnalyzeResponse(
             decision_ready=decision_ready,
             needs_manual_review=needs_review,
@@ -121,7 +142,7 @@ async def analyze(file: UploadFile = File(...)):
             series=series,
             verifications=verif,
             proof_snips=proof_snips,
-            redacted_pdf_b64=redacted_b64,
+            redacted_pdf_b64=s3_url,
             notes=[f"Columns found: {list(col_map.keys())}"]
         )
 
@@ -160,3 +181,14 @@ async def analyze(file: UploadFile = File(...)):
             os.unlink(tmp_path)
         except Exception:
             pass
+
+
+def upload_file_to_s3(file_content: bytes, filename: str, user_id: int):
+    try:
+        s3_key = f"uploads/{user_id}/{filename}"
+        s3_client.put_object(Bucket=S3_BUCKET_NAME, Key=s3_key, Body=file_content)
+        s3_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+        return s3_url
+    except Exception as e:
+        print(f"Error uploading file to S3: {e}")
+        return None
