@@ -1,4 +1,4 @@
-import os, io, tempfile, base64, json
+import os, io, tempfile, base64, json, uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from app.models import AnalyzeResponse, Fields, Series, Verifications, ProofSnip, ValueWithMeta
@@ -123,9 +123,11 @@ async def analyze(file: UploadFile = File(...)):
         for s in snip_coords:
             rect = fitz.Rect(s["box"])
             b64_img = crop_to_b64(prepped, s["page"], rect)
-            proof_snips.append(ProofSnip(label=s["label"], page=s["page"], image_b64=b64_img))
+            s3_url = upload_file_to_s3(b64_img, 'image/png', '.png')
+            image_data = s3_url if s3_url else b64_img
+            proof_snips.append(ProofSnip(label=s["label"], page=s["page"], image_b64=image_data))
 
-        s3_url = upload_file_to_s3(content, filename, current_user.id)
+        s3_url = upload_file_to_s3(redacted_b64)
         if not s3_url:
             raise HTTPException(status_code=500, detail="Failed to upload file to S3")
 
@@ -168,12 +170,12 @@ async def analyze(file: UploadFile = File(...)):
         )
 
         final_output = response.choices[0].message.content.strip()
-        
+
         final_response_content = {
             "analysis": final_output,
-            "redacted_pdf_b64": redacted_b64
+            "redacted_pdf_b64": s3_url
         }
-        
+
         return JSONResponse(content=final_response_content)
 
     finally:
@@ -183,10 +185,14 @@ async def analyze(file: UploadFile = File(...)):
             pass
 
 
-def upload_file_to_s3(file_content: bytes, filename: str, user_id: int):
+def upload_file_to_s3(b64_content: str, content_type: str = 'application/pdf', extension: str = '.pdf') -> str:
     try:
-        s3_key = f"uploads/{user_id}/{filename}"
-        s3_client.put_object(Bucket=S3_BUCKET_NAME, Key=s3_key, Body=file_content)
+        # Decode base64 to bytes
+        file_content = base64.b64decode(b64_content)
+        # Generate random filename
+        random_filename = str(uuid.uuid4()) + extension
+        s3_key = f"extractor/{random_filename}"
+        s3_client.put_object(Bucket=S3_BUCKET_NAME, Key=s3_key, Body=file_content, ContentType=content_type)
         s3_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
         return s3_url
     except Exception as e:
